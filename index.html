@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SUPERVECTAR AceStream IPFS ELCANO</title>
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #181818;
+    color: #fff;
+    margin: 0;
+    padding: 0;
+  }
+
+  header {
+    background: #222;
+    padding: 10px;
+    text-align: center;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: #FFD700;
+  }
+
+  .header-logo {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+  }
+
+  #searchInput {
+    width: 90%;
+    max-width: 400px;
+    padding: 8px;
+    margin-top: 10px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1rem;
+  }
+
+  .category-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+    background: #222;
+  }
+
+  .category-btn {
+    background: #444;
+    color: white;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all 0.3s;
+  }
+
+  .category-btn.active {
+    background: #ff5722;
+    transform: scale(1.05);
+  }
+
+  #notice {
+    text-align: center;
+    background: #ffcc00;
+    color: #000;
+    padding: 10px;
+    font-size: 0.95rem;
+    border-radius: 5px;
+    margin: 10px auto;
+    max-width: 95%;
+  }
+
+  h2.category-title {
+    background: #2a2a2a;
+    padding: 10px;
+    margin: 0;
+    font-size: 1.2rem;
+    border-top: 2px solid #444;
+  }
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #202020;
+    padding: 10px;
+    border-bottom: 1px solid #333;
+  }
+
+  li:hover {
+    background: #2a2a2a;
+  }
+
+  .channel-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .channel-info img.logo {
+    width: 80px;
+    border-radius: 6px;
+    background: #000;
+  }
+
+  .channel-info a {
+    color: #fff;
+    text-decoration: none;
+  }
+
+  .channel-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .play-btn {
+    background: #ff5722;
+    color: #fff;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+
+  .favorite-btn {
+    background: none;
+    border: none;
+    color: #777;
+    font-size: 1.5rem;
+    cursor: pointer;
+  }
+
+  .favorite-btn.active {
+    color: #ffcc00;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <img src="https://i.ibb.co/LzGF321b/vec-ace.jpg" class="header-logo">
+    SUPERVECTAR AceStream IPFS ELCANO
+  </h1>
+  <input type="text" id="searchInput" placeholder="🔍 Buscar canal...">
+</header>
+
+<div id="notice">
+  ⚠️ Para reproducir los canales es necesario tener instalado el reproductor ACESTREAM:
+  <a href="https://play.google.com/store/apps/details?id=org.acestream.node&hl=es" target="_blank">Descargar AceStream Android</a> |
+  <a href="https://drive.google.com/file/d/1q997S8Niwa3g8hmjACZOaAOQ-OY-Fldl/view?usp=drive_link" target="_blank">Descargar AceStream Windows</a>
+</div>
+
+<div class="category-bar" id="categoryBar">
+  <button class="category-btn active" data-category="all">Todos</button>
+  <button class="category-btn" data-category="favorites">⭐ Favoritos</button>
+</div>
+
+<div id="channelContainer"></div>
+
+<script>
+const LISTA_URL = "https://ipfs.io/ipns/k51qzi5uqu5di462t7j4vu4akwfhvtjhy88qbupktvoacqfqe9uforjvhyi4wr/hashes_acestream.m3u";
+const channelContainer = document.getElementById('channelContainer');
+const searchInput = document.getElementById('searchInput');
+const categoryBar = document.getElementById('categoryBar');
+
+let channels = [];
+let categories = [];
+let activeCategory = 'all';
+
+fetch(LISTA_URL)
+.then(res => res.text())
+.then(text => {
+  const lines = text.split('\n');
+  for(let i=0;i<lines.length;i++){
+    const line = lines[i].trim();
+    if(line.startsWith('#EXTINF')){
+      const info = line.substring(8);
+
+      const name = info.split(',').pop().trim();
+
+      let logo = '';
+      let category = 'Otros';
+
+      // ✅ NUEVO PARSER CORRECTO
+      const logoMatch = info.match(/tvg-logo="([^"]+)"/);
+      if (logoMatch) logo = logoMatch[1];
+
+      const categoryMatch = info.match(/group-title="([^"]+)"/);
+      if (categoryMatch) category = categoryMatch[1].trim();
+
+      const url = lines[++i]?.trim();
+      if(url){
+        channels.push({name, logo, category, url});
+        if(!categories.includes(category)) categories.push(category);
+      }
+    }
+  }
+
+  renderCategories();
+  renderChannels();
+});
+
+function renderCategories(){
+  categories.forEach(cat=>{
+    const btn = document.createElement('button');
+    btn.className='category-btn';
+    btn.textContent=cat;
+    btn.dataset.category=cat;
+    btn.onclick=()=>{
+      document.querySelectorAll('.category-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      activeCategory=cat;
+      renderChannels();
+    };
+    categoryBar.appendChild(btn);
+  });
+
+  document.querySelectorAll('.category-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.category-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      activeCategory=btn.dataset.category;
+      renderChannels();
+    });
+  });
+}
+
+function renderChannels(){
+  channelContainer.innerHTML='';
+  const savedFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
+  const searchTerm = searchInput.value.toLowerCase();
+  const grouped = {};
+
+  channels.forEach(c=>{
+    const isFav = savedFavorites.includes(c.url);
+    const matchCategory = activeCategory==='all' || 
+                          c.category===activeCategory || 
+                          (activeCategory==='favorites' && isFav);
+    const matchSearch = c.name.toLowerCase().includes(searchTerm);
+
+    if(matchCategory && matchSearch){
+      const catKey = (activeCategory==='favorites') ? '⭐ Favoritos' : c.category;
+      if(!grouped[catKey]) grouped[catKey]=[];
+      grouped[catKey].push(c);
+    }
+  });
+
+  Object.keys(grouped).forEach(cat=>{
+    const h2 = document.createElement('h2');
+    h2.className='category-title';
+    h2.textContent = cat;
+    channelContainer.appendChild(h2);
+
+    const ul = document.createElement('ul');
+
+    grouped[cat].forEach(c=>{
+      const li=document.createElement('li');
+      li.innerHTML=`
+        <div class="channel-info">
+          <img src="${c.logo || 'https://via.placeholder.com/160x80?text=Logo'}" class="logo">
+          <a href="${c.url}">${c.name}</a>
+        </div>
+        <div class="channel-actions">
+          <button class="play-btn">▶</button>
+          <button class="favorite-btn ${savedFavorites.includes(c.url)?'active':''}">★</button>
+        </div>
+      `;
+
+      li.querySelector('.play-btn').onclick=()=>{
+        if(c.url.startsWith('acestream://')) window.location.href=c.url;
+        else window.open(c.url,'_blank');
+      };
+
+      li.querySelector('.favorite-btn').onclick=(e)=>{
+        const btn=e.target;
+        btn.classList.toggle('active');
+        const favs=JSON.parse(localStorage.getItem('favorites')||'[]');
+        const idx=favs.indexOf(c.url);
+        if(btn.classList.contains('active')){
+          if(idx===-1) favs.push(c.url);
+        } else {
+          if(idx>-1) favs.splice(idx,1);
+        }
+        localStorage.setItem('favorites',JSON.stringify(favs));
+        if(activeCategory==='favorites') renderChannels();
+      };
+
+      ul.appendChild(li);
+    });
+
+    channelContainer.appendChild(ul);
+  });
+}
+
+searchInput.addEventListener('input', renderChannels);
+</script>
+
+</body>
+</html>
