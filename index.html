@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SUPERVECTAR AceStream DEPORTES ELCANO</title>
+<title>SUPERVECTAR AceStream HASHES</title>
 
 <style>
 
@@ -218,7 +218,7 @@ li:hover{
 
 <h1>
 <img src="https://i.ibb.co/7dGjZb80/6.jpg" class="header-logo">
-SUPERVECTAR AceStream DEPORTES ELCANO
+SUPERVECTAR AceStream HASHES
 </h1>
 
 <input type="text" id="searchInput" placeholder="🔍 Buscar canal...">
@@ -244,8 +244,11 @@ SUPERVECTAR AceStream DEPORTES ELCANO
 
 <script>
 
-const LISTA_URL =
-"https://ipfs.io/ipns/k51qzi5uqu5di462t7j4vu4akwfhvtjhy88qbupktvoacqfqe9uforjvhyi4wr/hashes_acestream.m3u";
+const LISTA_URLS = [
+  "https://k51qzi5uqu5di462t7j4vu4akwfhvtjhy88qbupktvoacqfqe9uforjvhyi4wr.ipns.dweb.link/hashes_acestream.m3u",
+  "https://k51qzi5uqu5di462t7j4vu4akwfhvtjhy88qbupktvoacqfqe9uforjvhyi4wr.ipns.inbrowser.link/hashes_acestream.m3u",
+  "https://ipfs.io/ipns/k51qzi5uqu5di462t7j4vu4akwfhvtjhy88qbupktvoacqfqe9uforjvhyi4wr/hashes_acestream.m3u"
+];
 
 const EPG_URLS = [
 "https://www.tdtchannels.com/epg/TV.xml",
@@ -273,10 +276,16 @@ let epgData = {};
 async function loadEPG(){
   for(const url of EPG_URLS){
     try{
-      const response = await fetch(url);
+      const response = await fetch(url, {cache:"no-store"});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+
       const xmlText = await response.text();
       const parser = new DOMParser();
       const xml = parser.parseFromString(xmlText,"text/xml");
+
+      if(xml.querySelector("parsererror")){
+        throw new Error("XML EPG inválido");
+      }
 
       const programmes = xml.querySelectorAll("programme");
 
@@ -286,9 +295,9 @@ async function loadEPG(){
         const start = p.getAttribute("start");
         const stop = p.getAttribute("stop");
 
-        if(!epgData[channel]){
-          epgData[channel] = [];
-        }
+        if(!channel) return;
+
+        if(!epgData[channel]) epgData[channel] = [];
 
         epgData[channel].push({
           title,
@@ -305,60 +314,278 @@ async function loadEPG(){
   }
 }
 
-loadEPG();
+function showMessage(message, type="error"){
+  const old = document.getElementById("loadMessage");
+  if(old) old.remove();
 
-fetch(LISTA_URL)
-.then(res=>res.text())
-.then(text=>{
+  const box = document.createElement("div");
+  box.id = "loadMessage";
+  box.style.cssText = `
+    margin:10px auto;
+    max-width:95%;
+    padding:12px;
+    border-radius:6px;
+    text-align:center;
+    font-weight:bold;
+    background:${type==="error" ? "#ffe5e5" : "#e8f5e9"};
+    color:${type==="error" ? "#b00000" : "#176b22"};
+    border:1px solid ${type==="error" ? "#ffb3b3" : "#a5d6a7"};
+  `;
+  box.innerHTML = message;
+  channelContainer.before(box);
+}
 
-  const lines = text.split('\n');
+function parseM3U(text){
+  text = text.replace(/^\uFEFF/, "").replace(/\r/g, "");
 
-  for(let i=0;i<lines.length;i++){
+  const lines = text
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean);
 
-    const line = lines[i].trim();
+  const result = [];
 
-    if(line.startsWith('#EXTINF')){
+  // Standard M3U / EXTINF
+  for(let i=0; i<lines.length; i++){
+    const line = lines[i];
 
-      const info = line.substring(8);
-      const name = info.split(',').pop().trim();
+    if(!line.startsWith("#EXTINF")) continue;
 
-      let logo = '';
-      let category = 'Otros';
-      let tvgId = '';
+    const info = line.substring(8);
+    const comma = info.lastIndexOf(",");
+    const name = comma >= 0 ? info.substring(comma + 1).trim() : "Canal";
 
-      const logoMatch = info.match(/tvg-logo="([^"]+)"/);
-      if(logoMatch) logo = logoMatch[1];
+    let logo = "";
+    let category = "Otros";
+    let tvgId = "";
 
-      const categoryMatch = info.match(/group-title="([^"]+)"/);
-      if(categoryMatch) category = categoryMatch[1].trim();
+    const logoMatch = info.match(/tvg-logo\s*=\s*"([^"]*)"/i);
+    if(logoMatch) logo = logoMatch[1];
 
-      const idMatch = info.match(/tvg-id="([^"]+)"/);
-      if(idMatch) tvgId = idMatch[1];
-
-      if(!tvgId){
-        const upperName = name.toUpperCase();
-        Object.keys(EPG_MAP).forEach(key=>{
-          if(upperName.includes(key)){
-            tvgId = EPG_MAP[key];
-          }
-        });
-      }
-
-      const url = lines[++i]?.trim();
-
-      if(url){
-        channels.push({name,logo,category,url,tvgId});
-        if(!categories.includes(category)) categories.push(category);
-      }
-
+    const categoryMatch = info.match(/group-title\s*=\s*"([^"]*)"/i);
+    if(categoryMatch && categoryMatch[1].trim()){
+      category = categoryMatch[1].trim();
     }
 
+    const idMatch = info.match(/tvg-id\s*=\s*"([^"]*)"/i);
+    if(idMatch) tvgId = idMatch[1];
+
+    if(!tvgId){
+      const upperName = name.toUpperCase();
+
+      Object.keys(EPG_MAP).forEach(key=>{
+        if(upperName.includes(key)){
+          tvgId = EPG_MAP[key];
+        }
+      });
+    }
+
+    let url = "";
+    for(let j=i+1; j<lines.length; j++){
+      if(!lines[j].startsWith("#")){
+        url = lines[j];
+        i = j;
+        break;
+      }
+    }
+
+    if(url){
+      result.push({name, logo, category, url, tvgId});
+    }
   }
 
-  renderCategories();
-  renderChannels();
+  // Fallback: plain AceStream hash list.
+  // If no EXTINF channels were found, every 40-hex-character hash
+  // becomes an AceStream channel.
+  if(result.length === 0){
+    const seen = new Set();
 
-});
+    for(const raw of lines){
+      const value = raw.replace(/^acestream:\/\//i, "").trim();
+
+      if(/^[a-f0-9]{40}$/i.test(value) && !seen.has(value.toLowerCase())){
+        seen.add(value.toLowerCase());
+
+        result.push({
+          name: `AceStream ${value.substring(0,8)}…`,
+          logo: "",
+          category: "AceStream",
+          url: `acestream://${value}`,
+          tvgId: ""
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+async function fetchWithTimeout(url, timeoutMs=15000){
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try{
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      mode: "cors",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "Accept": "application/x-mpegURL, audio/mpegurl, text/plain, */*"
+      }
+    });
+
+    if(!response.ok){
+      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    }
+
+    const text = await response.text();
+
+    if(!text.trim()){
+      throw new Error("Respuesta vacía");
+    }
+
+    return text;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+function isM3U(text){
+  const sample = text.replace(/^\uFEFF/, "").trimStart();
+
+  return (
+    sample.startsWith("#EXTM3U") ||
+    sample.includes("#EXTINF") ||
+    /(?:^|\\n)(?:acestream:\/\/)?[a-f0-9]{40}(?:\\n|$)/i.test(sample)
+  );
+}
+
+function showLoadStatus(html, type="info"){
+  let box = document.getElementById("loadMessage");
+
+  if(!box){
+    box = document.createElement("div");
+    box.id = "loadMessage";
+    channelContainer.before(box);
+  }
+
+  const styles = {
+    info:  ["#eef4ff","#174ea6","#b7cdf8"],
+    ok:    ["#e8f5e9","#176b22","#a5d6a7"],
+    error: ["#ffe5e5","#b00000","#ffb3b3"]
+  };
+
+  const s = styles[type] || styles.info;
+
+  box.style.cssText = `
+    margin:10px auto;
+    max-width:95%;
+    padding:12px;
+    border-radius:6px;
+    text-align:center;
+    font-weight:bold;
+    background:${s[0]};
+    color:${s[1]};
+    border:1px solid ${s[2]};
+  `;
+
+  box.innerHTML = html;
+}
+
+async function loadChannels(){
+  channelContainer.innerHTML = "";
+  channels = [];
+  categories = [];
+
+  showLoadStatus("⏳ <strong>Buscando la lista de canales...</strong><br><small>Probando los gateways disponibles.</small>", "info");
+
+  const errors = [];
+
+  for(const url of LISTA_URLS){
+    try{
+      console.log("🔎 Probando lista M3U:", url);
+
+      const text = await fetchWithTimeout(url);
+
+      console.log("📄 Respuesta recibida:", {
+        url,
+        bytes: text.length,
+        inicio: text.substring(0,150)
+      });
+
+      if(!isM3U(text)){
+        throw new Error(
+          `La respuesta no parece una M3U. Inicio recibido: ${text.substring(0,80)}`
+        );
+      }
+
+      const parsed = parseM3U(text);
+
+      if(!parsed.length){
+        throw new Error("La M3U se ha descargado pero no contiene canales reconocibles");
+      }
+
+      channels = parsed;
+
+      channels.forEach(c=>{
+        if(!categories.includes(c.category)){
+          categories.push(c.category);
+        }
+      });
+
+      console.log(`✅ Lista cargada correctamente desde ${url}`);
+      console.log(`📺 Canales encontrados: ${channels.length}`);
+
+      showLoadStatus(
+        `✅ <strong>${channels.length} canales cargados correctamente</strong><br>
+         <small>Fuente: ${new URL(url).hostname}</small>`,
+        "ok"
+      );
+
+      renderCategories();
+      renderChannels();
+
+      setTimeout(()=>{
+        const msg = document.getElementById("loadMessage");
+        if(msg) msg.remove();
+      }, 4000);
+
+      return;
+
+    }catch(err){
+      console.error("❌ Fallo del gateway:", url, err);
+
+      errors.push({
+        url,
+        error: err.name === "AbortError"
+          ? "Tiempo de espera agotado"
+          : (err.message || "Error desconocido")
+      });
+    }
+  }
+
+  const details = errors.map(e =>
+    `<div style="text-align:left;margin:6px 0">
+      <strong>${new URL(e.url).hostname}</strong>: ${e.error}
+    </div>`
+  ).join("");
+
+  showLoadStatus(`
+    ❌ <strong>No se ha podido leer la lista M3U desde ningún gateway.</strong>
+    <br><small>Que el navegador pueda descargar el archivo no garantiza que JavaScript pueda leerlo mediante fetch().</small>
+    <hr style="border:0;border-top:1px solid #ffb3b3">
+    ${details}
+    <br>
+    <button id="retryChannels" class="play-btn">🔄 Reintentar</button>
+  `, "error");
+
+  document.getElementById("retryChannels")?.addEventListener("click", loadChannels);
+}
+
+loadEPG();
+loadChannels();
 
 function renderCategories(){
   categories.forEach(cat=>{
@@ -441,7 +668,7 @@ function renderChannels(){
 
           <div>
 
-            <a href="${c.url}">
+            <a href="${c.url}" target="_blank" rel="noopener noreferrer">
               ${c.name}
             </a>
 
